@@ -1,27 +1,13 @@
 import os
 from dotenv import load_dotenv
 import operator
+import argparse
 from typing import TypedDict, Annotated, Union
 
-# LangChain / LangGraph Imports
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
 
-"""
-TODO
-====
-  I'm happy with the basic structure of this script, but unhappy with the
-  performance.
-
-  I think the issue with the current state is that there's no memory between
-  steps: the editor agent doesn't really need memory but the editor needs to
-  at least be aware of its past mistakes in order to prevent a loop of errors.
-
-  The current prompts are also drafts, some refinement (+ new rules) would be
-  very useful.
-
-"""
 
 # --- 1. Configuration ---
 
@@ -41,6 +27,7 @@ class AgentState(TypedDict):
     target_audience: str
     current_copy: str
     editor_feedback: str
+    feedback_history: list[str]
     decision: str  # "APPROVED" or "REJECTED"
     retry_count: int
 
@@ -65,10 +52,13 @@ def creator_agent(state: AgentState):
             "Output ONLY the caption text."
         )
     else:
+        # Combine all past feedback
+        history_str = "\n".join(state.get("feedback_history", []))
         prompt = (
             f"Your previous draft for '{product}' was rejected.\n"
-            f"Feedback: {feedback}\n\n"
-            "Please write a NEW caption that fixes these issues. "
+            f"Past Feedback History:\n{history_str}\n\n"
+            f"Most Recent Feedback: {feedback}\n\n"
+            "Please write a NEW caption that fixes these issues and respects ALL past feedback. "
             "Output ONLY the caption text."
         )
 
@@ -121,9 +111,15 @@ def editor_agent(state: AgentState):
         if line.startswith("FEEDBACK:"):
             feedback = line.replace("FEEDBACK:", "").strip()
 
+    # Append new feedback to history
+    current_history = state.get("feedback_history", [])
+    if feedback and feedback != "Good":
+        current_history.append(feedback)
+
     return {
         "decision": decision,
-        "editor_feedback": feedback
+        "editor_feedback": feedback,
+        "feedback_history": current_history
     }
 
 
@@ -184,6 +180,7 @@ def run_workflow(product: str, audience: str):
         "retry_count": 0,
         "current_copy": "",
         "editor_feedback": "",
+        "feedback_history": [],
         "decision": ""
     }
 
@@ -205,8 +202,13 @@ def run_workflow(product: str, audience: str):
 
 
 if __name__ == "__main__":
-    # Example that usually requires 1-2 loops to get right
+    parser = argparse.ArgumentParser(description="Run the Critic-Creator Agent Workflow")
+    parser.add_argument("--product", type=str, default="Omega 3 Fish Oil", help="Product name")
+    parser.add_argument("--audience", type=str, default="Health-conscious Seniors", help="Target audience")
+    
+    args = parser.parse_args()
+
     run_workflow(
-        product="Omega 3 Fish Oil",
-        audience="Health-conscious Seniors"
+        product=args.product,
+        audience=args.audience
     )
