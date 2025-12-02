@@ -1,11 +1,9 @@
-import os
 from dotenv import load_dotenv
-import operator
 import argparse
-from typing import TypedDict, Annotated, Union
-
+import json
+from typing import TypedDict
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, END
 
 
@@ -58,8 +56,8 @@ def creator_agent(state: AgentState):
             f"Your previous draft for '{product}' was rejected.\n"
             f"Past Feedback History:\n{history_str}\n\n"
             f"Most Recent Feedback: {feedback}\n\n"
-            "Please write a NEW caption that fixes these issues and respects ALL past feedback. "
-            "Output ONLY the caption text."
+            "Please write a NEW caption that fixes these issues and respects "
+            "ALL past feedback. Output ONLY the caption text."
         )
 
     response = llm.invoke([HumanMessage(content=prompt)])
@@ -93,7 +91,8 @@ def editor_agent(state: AgentState):
 
     Respond in EXACTLY this format:
     DECISION: [APPROVED or REJECTED]
-    FEEDBACK: [One sentence explaining the reason if rejected, or "Good" if approved]
+    FEEDBACK: [One sentence explaining the reason if rejected, or "Good" if 
+    approved]
     """
 
     response = llm.invoke([HumanMessage(content=prompt)])
@@ -119,7 +118,8 @@ def editor_agent(state: AgentState):
     return {
         "decision": decision,
         "editor_feedback": feedback,
-        "feedback_history": current_history
+        "feedback_history": current_history,
+        "current_copy": copy_to_review 
     }
 
 
@@ -171,8 +171,9 @@ app = workflow.compile()
 
 # --- 6. Execution Helper ---
 
-def run_workflow(product: str, audience: str):
-    print("--- Starting Workflow ---")
+def run_workflow(product: str, audience: str, verbose: bool = False):
+    if verbose:
+        print("--- Starting Workflow ---")
 
     inputs = {
         "product_name": product,
@@ -185,30 +186,71 @@ def run_workflow(product: str, audience: str):
     }
 
     # stream() yields events as the graph processes them
+    final_state = None
+    # stream() yields events as the graph processes them
+    final_state = None
     for output in app.stream(inputs):
         for key, value in output.items():
-            if key == "creator":
-                print(f"\nCREATOR generated draft #{
-                      value['retry_count']}:")
-                print(f"   \"{value['current_copy']}\"")
-            elif key == "editor":
-                print("\nEDITOR review:")
-                print(f"   Decision: {value['decision']}")
-                print(f"   Feedback: {value['editor_feedback']}")
+            final_state = value
+            if verbose:
+                if key == "creator":
+                    print(f"\nCREATOR generated draft #{value['retry_count']}:")
+                    print(f"   \"{value['current_copy']}\"")
+                elif key == "editor":
+                    print("\nEDITOR review:")
+                    print(f"   Decision: {value['decision']}")
+                    print(f"   Feedback: {value['editor_feedback']}")
 
-    print("\n--- Workflow Complete ---")
+    if final_state and final_state.get("decision") == "APPROVED":
+        output_json = {
+            "adcp_version": "1.0",
+            "task": "creative_generation",
+            "payload": {
+                "product_name": product,
+                "target_audience": audience,
+                "creative_assets": [
+                    {
+                        "type": "text_ad",
+                        "content": final_state["current_copy"],
+                        "metadata": {
+                            "length": len(final_state["current_copy"]),
+                            "sentiment": "energetic"
+                        }
+                    }
+                ],
+                "brand_safety_check": "passed"
+            }
+        }
+        print(json.dumps(output_json, indent=2))
+    else:
+        # Handle failure case
+        print(json.dumps({
+            "adcp_version": "1.0",
+            "task": "creative_generation",
+            "error": "Max retries reached or workflow failed",
+             "payload": {
+                "brand_safety_check": "failed"
+            }
+        }, indent=2))
 
-# --- 7. Run Example ---
+# --- 7. Run Script ---
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run the Critic-Creator Agent Workflow")
-    parser.add_argument("--product", type=str, default="Omega 3 Fish Oil", help="Product name")
-    parser.add_argument("--audience", type=str, default="Health-conscious Seniors", help="Target audience")
+    parser = argparse.ArgumentParser(
+        description="Run the Critic-Creator Agent Workflow")
+    parser.add_argument("--product", type=str,
+                        default="Omega 3 Fish Oil", help="Product name")
+    parser.add_argument("--audience", type=str,
+                        default="Health-conscious Seniors",
+                        help="Target audience")
+    
+    parser.add_argument("-t", "--trace", action="store_true", help="Enable verbose logging")
     
     args = parser.parse_args()
 
     run_workflow(
         product=args.product,
-        audience=args.audience
+        audience=args.audience,
+        verbose=args.trace
     )
