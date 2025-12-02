@@ -172,7 +172,8 @@ app = workflow.compile()
 
 # --- 6. Execution Helper ---
 
-def run_workflow(product: str, audience: str, verbose: bool = False, max_retries: int = 5):
+def run_workflow(product: str, audience: str, verbose: bool = False,
+                 max_retries: int = 5):
     if verbose:
         print("--- Starting Workflow ---")
 
