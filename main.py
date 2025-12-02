@@ -28,6 +28,7 @@ class AgentState(TypedDict):
     feedback_history: list[str]
     decision: str  # "APPROVED" or "REJECTED"
     retry_count: int
+    max_retries: int
 
 
 # --- 3. Define the Nodes (Agents) ---
@@ -98,8 +99,7 @@ def editor_agent(state: AgentState):
     response = llm.invoke([HumanMessage(content=prompt)])
     content = response.content.strip()
 
-    # --- Standard Library Parsing ---
-    # We parse the string response without needing extra libraries
+    # Parse response
     lines = content.split('\n')
     decision = "REJECTED"  # Default safe state
     feedback = "Error parsing feedback"
@@ -135,8 +135,9 @@ def should_continue(state: AgentState):
     if decision == "APPROVED":
         return "approved"
 
-    # Guardrail: Prevent infinite loops (Standard safety practice)
-    if retries >= 5:
+    # Guardrail: Prevent infinite loops
+    max_retries = state.get("max_retries", 5)
+    if retries >= max_retries:
         return "max_retries"
 
     return "rejected"
@@ -171,7 +172,7 @@ app = workflow.compile()
 
 # --- 6. Execution Helper ---
 
-def run_workflow(product: str, audience: str, verbose: bool = False):
+def run_workflow(product: str, audience: str, verbose: bool = False, max_retries: int = 5):
     if verbose:
         print("--- Starting Workflow ---")
 
@@ -182,11 +183,10 @@ def run_workflow(product: str, audience: str, verbose: bool = False):
         "current_copy": "",
         "editor_feedback": "",
         "feedback_history": [],
-        "decision": ""
+        "decision": "",
+        "max_retries": max_retries
     }
 
-    # stream() yields events as the graph processes them
-    final_state = None
     # stream() yields events as the graph processes them
     final_state = None
     for output in app.stream(inputs):
@@ -233,8 +233,8 @@ def run_workflow(product: str, audience: str, verbose: bool = False):
             }
         }, indent=2))
 
-# --- 7. Run Script ---
 
+# --- 7. Run Script ---
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -245,12 +245,17 @@ if __name__ == "__main__":
                         default="Health-conscious Seniors",
                         help="Target audience")
     
-    parser.add_argument("-t", "--trace", action="store_true", help="Enable verbose logging")
+    parser.add_argument("-t", "--trace", action="store_true", 
+                        help="Enable verbose logging")
+    
+    parser.add_argument("--max-retries", type=int, default=5, 
+                        help="Maximum number of retries")
     
     args = parser.parse_args()
 
     run_workflow(
         product=args.product,
         audience=args.audience,
-        verbose=args.trace
+        verbose=args.trace,
+        max_retries=args.max_retries
     )
