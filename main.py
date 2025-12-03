@@ -1,7 +1,8 @@
-from dotenv import load_dotenv
 import argparse
 import json
 from typing import TypedDict
+
+from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, END
@@ -245,18 +246,15 @@ if __name__ == "__main__":
     parser.add_argument("--audience", type=str,
                         default="Health-conscious Seniors",
                         help="Target audience")
-    
-    parser.add_argument("-t", "--trace", action="store_true", 
+    parser.add_argument("-v", "--verbose", action="store_true", 
                         help="Enable verbose logging")
-    
     parser.add_argument("--max-retries", type=int, default=5, 
                         help="Maximum number of retries")
-    
     args = parser.parse_args()
 
     run_workflow(
         product=args.product,
         audience=args.audience,
-        verbose=args.trace,
+        verbose=args.verbose,
         max_retries=args.max_retries
     )
