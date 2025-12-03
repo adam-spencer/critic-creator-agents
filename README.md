@@ -31,8 +31,8 @@ JSON format.
 1. Create and activate a new virtual environment and use `pip` to install dependencies 
 from `requirements.txt`.
 
-2. The script uses Google Gemini so you must create a file at the project root 
-containing your API key in this format:
+2. The script uses Google Gemini so you must create a file named `.env` at the project
+root containing your API key in this format:
 
 ```
 GOOGLE_API_KEY=[your API key here]
@@ -72,7 +72,9 @@ The 2 agents are:
 > The Creator: writes up the ad copy
 > The Editor: reviews the copy against a set of strict rules 
 
-Given a product name and target audience as input, the Creator proposes a caption to be evaluated by the Critic. If the Critic deems the copy unsuitable for the ruleset, it generates feedback and the Creator tries again based on this feedback. Once the caption has been approved by the Critic, the loop ends and the script should output the final approved result.
+Given a product name and target audience as input, the Creator proposes a caption to be evaluated by the Critic.
+If the Critic deems the copy unsuitable for the ruleset, it generates feedback and the Creator tries again based on this feedback.
+Once the caption has been approved by the Critic, the loop ends and the script should output the final approved result.
 
 Please create this system using only the Python standard library and LangChain/LangGraph. 
 
