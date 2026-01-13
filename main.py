@@ -34,6 +34,29 @@ class AgentState(TypedDict):
 
 # --- 3. Define the Nodes (Agents) ---
 
+def construct_creator_prompt(product: str, audience: str, retries: int,
+                             feedback: str, history: list[str]) -> str:
+    """
+    Constructs the prompt for the Creator agent based on retry state.
+    """
+    if retries == 0:
+        return (
+            f"Write a short, punchy social media ad caption for '{product}'. "
+            f"Target audience: {audience}. "
+            "Output ONLY the caption text."
+        )
+    else:
+        # Combine all past feedback
+        history_str = "\n".join(history)
+        return (
+            f"Your previous draft for '{product}' was rejected.\n"
+            f"Past Feedback History:\n{history_str}\n\n"
+            f"Most Recent Feedback: {feedback}\n\n"
+            "Please write a NEW caption that fixes these issues and respects "
+            "ALL past feedback. Output ONLY the caption text."
+        )
+
+
 def creator_agent(state: AgentState):
     """
     The Creator generates ad copy. It checks if there is existing feedback
@@ -43,24 +66,10 @@ def creator_agent(state: AgentState):
     audience = state["target_audience"]
     feedback = state.get("editor_feedback", "")
     retries = state.get("retry_count", 0)
+    history = state.get("feedback_history", [])
 
-    # Contextual Prompting
-    if retries == 0:
-        prompt = (
-            f"Write a short, punchy social media ad caption for '{product}'. "
-            f"Target audience: {audience}. "
-            "Output ONLY the caption text."
-        )
-    else:
-        # Combine all past feedback
-        history_str = "\n".join(state.get("feedback_history", []))
-        prompt = (
-            f"Your previous draft for '{product}' was rejected.\n"
-            f"Past Feedback History:\n{history_str}\n\n"
-            f"Most Recent Feedback: {feedback}\n\n"
-            "Please write a NEW caption that fixes these issues and respects "
-            "ALL past feedback. Output ONLY the caption text."
-        )
+    prompt = construct_creator_prompt(product, audience, retries, feedback,
+                                      history)
 
     response = llm.invoke([HumanMessage(content=prompt)])
 
@@ -83,7 +92,8 @@ def check_deterministic_rules(copy_text: str, product_name: str) -> list[str]:
     # 1. Under 15 words
     word_count = len(copy_text.split())
     if word_count >= 15:
-        failures.append(f"Copy is too long ({word_count} words). Must be under 15 words.")
+        failures.append(
+            f"Copy is too long ({word_count} words). Must be under 15 words.")
 
     # 2. Exactly one emoji
     emoji_ranges = [
@@ -112,9 +122,28 @@ def check_deterministic_rules(copy_text: str, product_name: str) -> list[str]:
 
     # 4. Mention product name
     if product_name.lower() not in copy_text.lower():
-        failures.append(f"Must mention the product name '{product_name}' explicitly.")
+        failures.append(
+            f"Must mention the product name '{product_name}' explicitly.")
 
     return failures
+
+
+def parse_editor_response(content: str) -> tuple[str, str]:
+    """
+    Parses the LLM response to extract DECISION and FEEDBACK.
+    """
+    lines = content.split('\n')
+    decision = "REJECTED"  # Default safe state
+    feedback = "Error parsing feedback"
+
+    for line in lines:
+        line = line.strip()
+        if line.startswith("DECISION:"):
+            decision = line.replace("DECISION:", "").strip().upper()
+        if line.startswith("FEEDBACK:"):
+            feedback = line.replace("FEEDBACK:", "").strip()
+            
+    return decision, feedback
 
 
 def editor_agent(state: AgentState):
@@ -126,13 +155,14 @@ def editor_agent(state: AgentState):
     product_name = state["product_name"]
 
     # i. Deterministic Checks
-    deterministic_failures = check_deterministic_rules(copy_to_review, product_name)
+    deterministic_failures = check_deterministic_rules(
+        copy_to_review, product_name)
 
     if deterministic_failures:
         # Fast fail
         feedback = "Violation of strict rules: " + "; ".join(deterministic_failures)
-        current_history = state.get("feedback_history", [])
-        current_history.append(feedback)
+        current_history = update_feedback_history(
+            state.get("feedback_history", []), feedback)
         return {
             "decision": "REJECTED",
             "editor_feedback": feedback,
@@ -166,20 +196,11 @@ def editor_agent(state: AgentState):
     content = response.content.strip()
 
     # Parse response
-    lines = content.split('\n')
-    decision = "REJECTED"  # Default safe state
-    feedback = "Error parsing feedback"
-
-    for line in lines:
-        if line.startswith("DECISION:"):
-            decision = line.replace("DECISION:", "").strip().upper()
-        if line.startswith("FEEDBACK:"):
-            feedback = line.replace("FEEDBACK:", "").strip()
+    decision, feedback = parse_editor_response(content)
 
     # Append new feedback to history
-    current_history = state.get("feedback_history", [])
-    if feedback and feedback != "Good":
-        current_history.append(feedback)
+    current_history = update_feedback_history(state.get("feedback_history", []),
+                                              feedback)
 
     return {
         "decision": decision,
@@ -187,6 +208,19 @@ def editor_agent(state: AgentState):
         "feedback_history": current_history,
         "current_copy": copy_to_review 
     }
+
+
+def update_feedback_history(history: list[str], feedback: str) -> list[str]:
+    """
+    Updates the feedback history, ignoring 'Good' or empty feedback.
+    Returns a new list to avoid mutating the input in place if not desired, 
+    though Python lists are mutable.
+    """
+    # Create a copy to be safe/functional style
+    new_history = history.copy()
+    if feedback and feedback != "Good":
+        new_history.append(feedback)
+    return new_history
 
 
 # --- 4. Define the Router Logic ---
