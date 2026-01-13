@@ -2,3 +2,4 @@ langchain-google-genai
 langgraph
 langchain-core
 python-dotenv
+pytest
