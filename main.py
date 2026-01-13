@@ -70,18 +70,83 @@ def creator_agent(state: AgentState):
     }
 
 
+def check_deterministic_rules(copy_text: str, product_name: str) -> list[str]:
+    """
+    Checks the deterministic rules:
+    1. Must be under 15 words.
+    2. Must contain exactly one emoji.
+    3. Must NOT contain hashtags.
+    4. Must mention the product name explicitly.
+    """
+    failures = []
+
+    # 1. Under 15 words
+    word_count = len(copy_text.split())
+    if word_count >= 15:
+        failures.append(f"Copy is too long ({word_count} words). Must be under 15 words.")
+
+    # 2. Exactly one emoji
+    emoji_ranges = [
+        (0x1F600, 0x1F64F),  # Emoticons
+        (0x1F300, 0x1F5FF),  # Symbols & Pictographs
+        (0x1F680, 0x1F6FF),  # Transport & Map Symbols
+        (0x1F1E0, 0x1F1FF),  # Flags
+        (0x2700, 0x27BF),    # Dingbats
+        (0xFE00, 0xFE0F),    # Variation Selectors
+        (0x1F900, 0x1F9FF),  # Supplemental Symbols and Pictographs
+    ]
+    
+    count = 0
+    for char in copy_text:
+        cp = ord(char)
+        is_emoji = any(start <= cp <= end for start, end in emoji_ranges)
+        if is_emoji:
+            count += 1
+            
+    if count != 1:
+        failures.append(f"Must contain exactly one emoji. Found {count}.")
+
+    # 3. No hashtags
+    if '#' in copy_text:
+        failures.append("Must NOT contain hashtags.")
+
+    # 4. Mention product name
+    if product_name.lower() not in copy_text.lower():
+        failures.append(f"Must mention the product name '{product_name}' explicitly.")
+
+    return failures
+
+
 def editor_agent(state: AgentState):
     """
     The Editor reviews the copy against strict rules.
     It outputs a strict format that we can parse with standard Python.
     """
     copy_to_review = state["current_copy"]
+    product_name = state["product_name"]
 
+    # i. Deterministic Checks
+    deterministic_failures = check_deterministic_rules(copy_to_review, product_name)
+
+    if deterministic_failures:
+        # Fast fail
+        feedback = "Violation of strict rules: " + "; ".join(deterministic_failures)
+        current_history = state.get("feedback_history", [])
+        current_history.append(feedback)
+        return {
+            "decision": "REJECTED",
+            "editor_feedback": feedback,
+            "feedback_history": current_history,
+            "current_copy": copy_to_review
+        }
+
+    # ii. Subjective Checks (LLM)
     rules = """
-    1. Must be under 15 words.
-    2. Must contain exactly one emoji.
-    3. Must NOT contain hashtags.
-    4. Must mention the product name explicitly.
+    1. Tone must be empathetic and trustworthy.
+    2. Language must be suitable for the target audience.
+    3. Must articulate a benefit, not just a feature.
+    4. Avoid overused buzzwords/clichés.
+    5. Ensure copy is brand-safe and not offensive.
     """
 
     # We instruct the LLM to use a specific format for easy parsing
