@@ -101,25 +101,4 @@ def test_update_history_ignores_empty():
     assert len(new_hist) == 1
     assert new_hist[0] == "Old error"
 
-if __name__ == "__main__":
-    # If run directly to verify without pytest installed (just in case),
-    # but pytest is preferred.
-    print("Running manual assertions...")
-    test_parse_approved()
-    test_parse_rejected()
-    test_parse_malformed()
-    test_parse_with_whitespace()
-    test_should_continue_approved()
-    test_should_continue_rejected_retry()
-    test_should_continue_max_retries_reached()
-    test_should_continue_max_retries_exceeded()
-    test_should_continue_custom_max_retries()
-    
-    # New tests
-    test_construct_prompt_first_run()
-    test_construct_prompt_retry()
-    test_update_history_adds_feedback()
-    test_update_history_ignores_good()
-    test_update_history_ignores_empty()
-    
-    print("All assertions passed!")
+

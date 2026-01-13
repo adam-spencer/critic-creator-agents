@@ -29,5 +29,4 @@ def test_check_deterministic_rules():
 
     print("All deterministic rule tests passed!")
 
-if __name__ == "__main__":
-    test_check_deterministic_rules()
+
